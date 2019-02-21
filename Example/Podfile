@@ -1,14 +1,12 @@
-source 'https://github.com/CocoaPods/Specs.git'
+# Uncomment the next line to define a global platform for your project
+platform :ios, '9.0'
 
-target 'MWPhotoBrowser_Example', :exclusive => true do
-  pod "MWPhotoBrowser", :path => "../"
-end
+target 'MWPhotoBrowser_Example' do
+  # Uncomment the next line if you're using Swift or would like to use dynamic frameworks
+  # use_frameworks!
 
-target 'MWPhotoBrowser_Tests', :exclusive => true do
-  pod "MWPhotoBrowser", :path => "../"
+  # Pods for MWPhotoBrowser_Example
 
-  pod 'Specta'
-  pod 'Expecta'
-  pod 'FBSnapshotTestCase'
-  pod 'Expecta+Snapshots'
+pod "MWPhotoBrowser", :path => "../"
+
 end
