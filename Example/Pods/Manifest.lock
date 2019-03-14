@@ -4,10 +4,10 @@ PODS:
   - MWPhotoBrowser (2.1.2):
     - DACircularProgress (~> 2.3)
     - MBProgressHUD (~> 1.0.0)
-    - SDWebImage (~> 4.4.0)
-  - SDWebImage (4.4.5):
-    - SDWebImage/Core (= 4.4.5)
-  - SDWebImage/Core (4.4.5)
+    - SDWebImage (~> 5.0.0-beta5)
+  - SDWebImage (5.0.0-beta5):
+    - SDWebImage/Core (= 5.0.0-beta5)
+  - SDWebImage/Core (5.0.0-beta5)
 
 DEPENDENCIES:
   - MWPhotoBrowser (from `../`)
@@ -25,8 +25,8 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   DACircularProgress: 4dd437c0fc3da5161cb289e07ac449493d41db71
   MBProgressHUD: 4890f671c94e8a0f3cf959aa731e9de2f036d71a
-  MWPhotoBrowser: 1fdcae92b27d0d14720ca792990a8a489671b76b
-  SDWebImage: ecc03494e973b93b80213649d32175f8d2d17d4d
+  MWPhotoBrowser: 3d08202af2bcf5509dff07c9aed3d5df5f148f7e
+  SDWebImage: fd609df53c0f55fdcd4705bd14c01c9d5c348d0c
 
 PODFILE CHECKSUM: fde9a97a431ea2a855d262aa0ea71e2566a080d2
 
