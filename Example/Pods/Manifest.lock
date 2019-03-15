@@ -1,9 +1,7 @@
 PODS:
   - DACircularProgress (2.3.1)
-  - MBProgressHUD (1.0.0)
   - MWPhotoBrowser (2.1.2):
     - DACircularProgress (~> 2.3)
-    - MBProgressHUD (~> 1.0.0)
     - SDWebImage (~> 5.0.0-beta5)
   - SDWebImage (5.0.0-beta5):
     - SDWebImage/Core (= 5.0.0-beta5)
@@ -15,7 +13,6 @@ DEPENDENCIES:
 SPEC REPOS:
   https://github.com/cocoapods/specs.git:
     - DACircularProgress
-    - MBProgressHUD
     - SDWebImage
 
 EXTERNAL SOURCES:
@@ -24,8 +21,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   DACircularProgress: 4dd437c0fc3da5161cb289e07ac449493d41db71
-  MBProgressHUD: 4890f671c94e8a0f3cf959aa731e9de2f036d71a
-  MWPhotoBrowser: 3d08202af2bcf5509dff07c9aed3d5df5f148f7e
+  MWPhotoBrowser: e403822ef7d094d5a892866a54c845a645e742a4
   SDWebImage: fd609df53c0f55fdcd4705bd14c01c9d5c348d0c
 
 PODFILE CHECKSUM: fde9a97a431ea2a855d262aa0ea71e2566a080d2
