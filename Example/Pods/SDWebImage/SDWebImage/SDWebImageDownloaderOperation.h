@@ -10,13 +10,6 @@
 #import "SDWebImageDownloader.h"
 #import "SDWebImageOperation.h"
 
-FOUNDATION_EXPORT NSString * _Nonnull const SDWebImageDownloadStartNotification;
-FOUNDATION_EXPORT NSString * _Nonnull const SDWebImageDownloadReceiveResponseNotification;
-FOUNDATION_EXPORT NSString * _Nonnull const SDWebImageDownloadStopNotification;
-FOUNDATION_EXPORT NSString * _Nonnull const SDWebImageDownloadFinishNotification;
-
-
-
 /**
  Describes a downloader operation. If one wants to use a custom downloader op, it needs to inherit from `NSOperation` and conform to this protocol
  For the description about these methods, see `SDWebImageDownloaderOperation`
@@ -49,6 +42,9 @@ FOUNDATION_EXPORT NSString * _Nonnull const SDWebImageDownloadFinishNotification
 @end
 
 
+/**
+ The download operation class for SDWebImageDownloader.
+ */
 @interface SDWebImageDownloaderOperation : NSOperation <SDWebImageDownloaderOperation>
 
 /**

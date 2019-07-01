@@ -10,6 +10,12 @@
 #import "SDWebImageDownloaderConfig.h"
 #import "SDWebImageDownloaderOperation.h"
 #import "SDWebImageError.h"
+#import "SDInternalMacros.h"
+
+NSNotificationName const SDWebImageDownloadStartNotification = @"SDWebImageDownloadStartNotification";
+NSNotificationName const SDWebImageDownloadReceiveResponseNotification = @"SDWebImageDownloadReceiveResponseNotification";
+NSNotificationName const SDWebImageDownloadStopNotification = @"SDWebImageDownloadStopNotification";
+NSNotificationName const SDWebImageDownloadFinishNotification = @"SDWebImageDownloadFinishNotification";
 
 static void * SDWebImageDownloaderContext = &SDWebImageDownloaderContext;
 
@@ -171,7 +177,15 @@ static void * SDWebImageDownloaderContext = &SDWebImageDownloaderContext;
     return value;
 }
 
-- (nullable SDWebImageDownloadToken *)downloadImageWithURL:(NSURL *)url options:(SDWebImageDownloaderOptions)options progress:(SDWebImageDownloaderProgressBlock)progressBlock completed:(SDWebImageDownloaderCompletedBlock)completedBlock {
+- (nullable SDWebImageDownloadToken *)downloadImageWithURL:(NSURL *)url
+                                                 completed:(SDWebImageDownloaderCompletedBlock)completedBlock {
+    return [self downloadImageWithURL:url options:0 progress:nil completed:completedBlock];
+}
+
+- (nullable SDWebImageDownloadToken *)downloadImageWithURL:(NSURL *)url
+                                                   options:(SDWebImageDownloaderOptions)options
+                                                  progress:(SDWebImageDownloaderProgressBlock)progressBlock
+                                                 completed:(SDWebImageDownloaderCompletedBlock)completedBlock {
     return [self downloadImageWithURL:url options:options context:nil progress:progressBlock completed:completedBlock];
 }
 
@@ -202,15 +216,15 @@ static void * SDWebImageDownloaderContext = &SDWebImageDownloaderContext;
             }
             return nil;
         }
-        __weak typeof(self) wself = self;
+        @weakify(self);
         operation.completionBlock = ^{
-            __strong typeof(wself) sself = wself;
-            if (!sself) {
+            @strongify(self);
+            if (!self) {
                 return;
             }
-            SD_LOCK(sself.operationsLock);
-            [sself.URLOperations removeObjectForKey:url];
-            SD_UNLOCK(sself.operationsLock);
+            SD_LOCK(self.operationsLock);
+            [self.URLOperations removeObjectForKey:url];
+            SD_UNLOCK(self.operationsLock);
         };
         self.URLOperations[url] = operation;
         // Add operation to operation queue only after all configuration done according to Apple's doc.
@@ -291,9 +305,7 @@ static void * SDWebImageDownloaderContext = &SDWebImageDownloaderContext;
     }
         
     if ([operation respondsToSelector:@selector(setMinimumProgressInterval:)]) {
-        NSTimeInterval minimumProgressInterval = self.config.minimumProgressInterval;
-        minimumProgressInterval = MIN(MAX(minimumProgressInterval, 0), 1);
-        operation.minimumProgressInterval = minimumProgressInterval;
+        operation.minimumProgressInterval = MIN(MAX(self.config.minimumProgressInterval, 0), 1);
     }
     
     if (options & SDWebImageDownloaderHighPriority) {
@@ -501,7 +513,7 @@ didReceiveResponse:(NSURLResponse *)response
 
 @implementation SDWebImageDownloader (SDImageLoader)
 
-- (BOOL)canLoadWithURL:(NSURL *)url {
+- (BOOL)canRequestImageForURL:(NSURL *)url {
     if (!url) {
         return NO;
     }
@@ -509,7 +521,7 @@ didReceiveResponse:(NSURLResponse *)response
     return YES;
 }
 
-- (id<SDWebImageOperation>)loadImageWithURL:(NSURL *)url options:(SDWebImageOptions)options context:(SDWebImageContext *)context progress:(SDImageLoaderProgressBlock)progressBlock completed:(SDImageLoaderCompletedBlock)completedBlock {
+- (id<SDWebImageOperation>)requestImageWithURL:(NSURL *)url options:(SDWebImageOptions)options context:(SDWebImageContext *)context progress:(SDImageLoaderProgressBlock)progressBlock completed:(SDImageLoaderCompletedBlock)completedBlock {
     UIImage *cachedImage = context[SDWebImageContextLoaderCachedImage];
     
     SDWebImageDownloaderOptions downloaderOptions = 0;
@@ -533,6 +545,27 @@ didReceiveResponse:(NSURLResponse *)response
     }
     
     return [self downloadImageWithURL:url options:downloaderOptions context:context progress:progressBlock completed:completedBlock];
+}
+
+- (BOOL)shouldBlockFailedURLWithURL:(NSURL *)url error:(NSError *)error {
+    BOOL shouldBlockFailedURL;
+    // Filter the error domain and check error codes
+    if ([error.domain isEqualToString:SDWebImageErrorDomain]) {
+        shouldBlockFailedURL = (   error.code == SDWebImageErrorInvalidURL
+                                || error.code == SDWebImageErrorBadImageData);
+    } else if ([error.domain isEqualToString:NSURLErrorDomain]) {
+        shouldBlockFailedURL = (   error.code != NSURLErrorNotConnectedToInternet
+                                && error.code != NSURLErrorCancelled
+                                && error.code != NSURLErrorTimedOut
+                                && error.code != NSURLErrorInternationalRoamingOff
+                                && error.code != NSURLErrorDataNotAllowed
+                                && error.code != NSURLErrorCannotFindHost
+                                && error.code != NSURLErrorCannotConnectToHost
+                                && error.code != NSURLErrorNetworkConnectionLost);
+    } else {
+        shouldBlockFailedURL = NO;
+    }
+    return shouldBlockFailedURL;
 }
 
 @end

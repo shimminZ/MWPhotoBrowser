@@ -13,6 +13,7 @@
 #import "objc/runtime.h"
 #import "UIView+WebCacheOperation.h"
 #import "UIView+WebCache.h"
+#import "SDInternalMacros.h"
 
 static NSString * const SDAlternateImageOperationKey = @"NSButtonAlternateImageOperation";
 
@@ -121,13 +122,14 @@ static NSString * const SDAlternateImageOperationKey = @"NSButtonAlternateImageO
         mutableContext = [NSMutableDictionary dictionary];
     }
     mutableContext[SDWebImageContextSetImageOperationKey] = SDAlternateImageOperationKey;
-    __weak typeof(self)weakSelf = self;
+    @weakify(self);
     [self sd_internalSetImageWithURL:url
                     placeholderImage:placeholder
                              options:options
                              context:mutableContext
                        setImageBlock:^(NSImage * _Nullable image, NSData * _Nullable imageData, SDImageCacheType cacheType, NSURL * _Nullable imageURL) {
-                           weakSelf.alternateImage = image;
+                           @strongify(self);
+                           self.alternateImage = image;
                        }
                             progress:progressBlock
                            completed:^(NSImage * _Nullable image, NSData * _Nullable data, NSError * _Nullable error, SDImageCacheType cacheType, BOOL finished, NSURL * _Nullable imageURL) {

@@ -12,6 +12,8 @@
 
 #import "UIImage+Metadata.h"
 #import "NSImage+Compatibility.h"
+#import "SDWeakProxy.h"
+#import "SDInternalMacros.h"
 #import <mach/mach.h>
 #import <objc/runtime.h>
 
@@ -38,86 +40,10 @@ static NSUInteger SDDeviceFreeMemory() {
     return vm_stat.free_count * page_size;
 }
 
-@interface SDWeakProxy : NSProxy
-
-@property (nonatomic, weak, readonly) id target;
-
-- (instancetype)initWithTarget:(id)target;
-+ (instancetype)proxyWithTarget:(id)target;
-
-@end
-
-@implementation SDWeakProxy
-
-- (instancetype)initWithTarget:(id)target {
-    _target = target;
-    return self;
+@interface SDAnimatedImageView () <CALayerDelegate> {
+    NSRunLoopMode _runLoopMode;
+    BOOL _initFinished; // Extra flag to mark the `commonInit` is called
 }
-
-+ (instancetype)proxyWithTarget:(id)target {
-    return [[SDWeakProxy alloc] initWithTarget:target];
-}
-
-- (id)forwardingTargetForSelector:(SEL)selector {
-    return _target;
-}
-
-- (void)forwardInvocation:(NSInvocation *)invocation {
-    void *null = NULL;
-    [invocation setReturnValue:&null];
-}
-
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector {
-    return [NSObject instanceMethodSignatureForSelector:@selector(init)];
-}
-
-- (BOOL)respondsToSelector:(SEL)aSelector {
-    return [_target respondsToSelector:aSelector];
-}
-
-- (BOOL)isEqual:(id)object {
-    return [_target isEqual:object];
-}
-
-- (NSUInteger)hash {
-    return [_target hash];
-}
-
-- (Class)superclass {
-    return [_target superclass];
-}
-
-- (Class)class {
-    return [_target class];
-}
-
-- (BOOL)isKindOfClass:(Class)aClass {
-    return [_target isKindOfClass:aClass];
-}
-
-- (BOOL)isMemberOfClass:(Class)aClass {
-    return [_target isMemberOfClass:aClass];
-}
-
-- (BOOL)conformsToProtocol:(Protocol *)aProtocol {
-    return [_target conformsToProtocol:aProtocol];
-}
-
-- (BOOL)isProxy {
-    return YES;
-}
-
-- (NSString *)description {
-    return [_target description];
-}
-
-- (NSString *)debugDescription {
-    return [_target debugDescription];
-}
-
-@end
-
-@interface SDAnimatedImageView () <CALayerDelegate>
 
 @property (nonatomic, strong, readwrite) UIImage *currentFrame;
 @property (nonatomic, assign, readwrite) NSUInteger currentFrameIndex;
@@ -139,18 +65,12 @@ static NSUInteger SDDeviceFreeMemory() {
 #else
 @property (nonatomic, strong) CADisplayLink *displayLink;
 #endif
-// Layer-backed NSImageView use a subview of `NSImageViewContainerView` to do actual layer rendering. We use this layer instead of `self.layer` during animated image rendering.
-#if SD_MAC
-@property (nonatomic, strong, readonly) CALayer *imageViewLayer;
-#endif
 
 @end
 
 @implementation SDAnimatedImageView
 #if SD_UIKIT
-@dynamic animationRepeatCount;
-#else
-@dynamic imageViewLayer;
+@dynamic animationRepeatCount; // we re-use this property from `UIImageView` super class on iOS.
 #endif
 
 #pragma mark - Initializers
@@ -206,9 +126,10 @@ static NSUInteger SDDeviceFreeMemory() {
 
 - (void)commonInit
 {
+    // Pay attention that UIKit's `initWithImage:` will trigger a `setImage:` during initialization before this `commonInit`.
+    // So the properties which rely on this order, should using lazy-evaluation or do extra check in `setImage:`.
     self.shouldCustomLoopCount = NO;
     self.shouldIncrementalLoad = YES;
-    self.lock = dispatch_semaphore_create(1);
 #if SD_MAC
     self.wantsLayer = YES;
     // Default value from `NSImageView`
@@ -217,9 +138,10 @@ static NSUInteger SDDeviceFreeMemory() {
     self.imageAlignment = NSImageAlignCenter;
 #endif
 #if SD_UIKIT
-    self.runLoopMode = [[self class] defaultRunLoopMode];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(didReceiveMemoryWarning:) name:UIApplicationDidReceiveMemoryWarningNotification object:nil];
 #endif
+    // Mark commonInit finished
+    _initFinished = YES;
 }
 
 - (void)resetAnimatedImage
@@ -306,8 +228,6 @@ static NSUInteger SDDeviceFreeMemory() {
         
         // Ensure disabled highlighting; it's not supported (see `-setHighlighted:`).
         super.highlighted = NO;
-        // UIImageView seems to bypass some accessors when calculating its intrinsic content size, so this ensures its intrinsic content size comes from the animated image.
-        [self invalidateIntrinsicContentSize];
         
         // Calculate max buffer size
         [self calculateMaxBufferCount];
@@ -319,31 +239,43 @@ static NSUInteger SDDeviceFreeMemory() {
         
         [self.layer setNeedsDisplay];
 #if SD_MAC
-        [self.layer displayIfNeeded]; // macOS's imageViewLayer is not equal to self.layer. But `[super setImage:]` will impliedly mark it needsDisplay. We call `[self.layer displayIfNeeded]` to immediately refresh the imageViewLayer to avoid flashing
+        [self.layer displayIfNeeded]; // macOS's imageViewLayer may not equal to self.layer. But `[super setImage:]` will impliedly mark it needsDisplay. We call `[self.layer displayIfNeeded]` to immediately refresh the imageViewLayer to avoid flashing
 #endif
     }
-}
-
-- (void)setAnimationRepeatCount:(NSInteger)animationRepeatCount
-{
-#if SD_MAC
-    _animationRepeatCount = animationRepeatCount;
-#else
-    [super setAnimationRepeatCount:animationRepeatCount];
-#endif
 }
 
 #if SD_UIKIT
-- (void)setRunLoopMode:(NSString *)runLoopMode
+- (void)setRunLoopMode:(NSRunLoopMode)runLoopMode
 {
-    if (![@[NSDefaultRunLoopMode, NSRunLoopCommonModes] containsObject:runLoopMode]) {
-        NSAssert(NO, @"Invalid run loop mode: %@", runLoopMode);
-        _runLoopMode = [[self class] defaultRunLoopMode];
-    } else {
-        _runLoopMode = runLoopMode;
+    if ([_runLoopMode isEqual:runLoopMode]) {
+        return;
     }
+    if (_displayLink) {
+        if (_runLoopMode) {
+            [_displayLink removeFromRunLoop:[NSRunLoop mainRunLoop] forMode:_runLoopMode];
+        }
+        if (runLoopMode.length > 0) {
+            [_displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:runLoopMode];
+        }
+    }
+    _runLoopMode = [runLoopMode copy];
+}
+
+- (NSRunLoopMode)runLoopMode
+{
+    if (!_runLoopMode) {
+        _runLoopMode = [[self class] defaultRunLoopMode];
+    }
+    return _runLoopMode;
 }
 #endif
+
+- (BOOL)shouldIncrementalLoad {
+    if (!_initFinished) {
+        return YES; // Defaults to YES
+    }
+    return _initFinished;
+}
 
 #pragma mark - Private
 - (NSOperationQueue *)fetchQueue
@@ -363,12 +295,18 @@ static NSUInteger SDDeviceFreeMemory() {
     return _frameBuffer;
 }
 
+- (dispatch_semaphore_t)lock {
+    if (!_lock) {
+        _lock = dispatch_semaphore_create(1);
+    }
+    return _lock;
+}
+
 #if SD_MAC
 - (CVDisplayLinkRef)displayLink
 {
     if (!_displayLink) {
-        CGDirectDisplayID displayID = CGMainDisplayID();
-        CVReturn error = CVDisplayLinkCreateWithCGDisplay(displayID, &_displayLink);
+        CVReturn error = CVDisplayLinkCreateWithActiveCGDisplays(&_displayLink);
         if (error) {
             return NULL;
         }
@@ -389,13 +327,6 @@ static NSUInteger SDDeviceFreeMemory() {
         [_displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:self.runLoopMode];
     }
     return _displayLink;
-}
-#endif
-
-#if SD_MAC
-- (CALayer *)imageViewLayer {
-    NSView *imageView = objc_getAssociatedObject(self, NSSelectorFromString(@"_imageView"));
-    return imageView.layer;
 }
 #endif
 
@@ -505,23 +436,6 @@ static NSUInteger SDDeviceFreeMemory() {
     } else {
         [self stopAnimating];
     }
-}
-
-#pragma mark Auto Layout
-
-- (CGSize)intrinsicContentSize
-{
-    // Default to let UIImageView handle the sizing of its image, and anything else it might consider.
-    CGSize intrinsicContentSize = [super intrinsicContentSize];
-    
-    // If we have have an animated image, use its image size.
-    // UIImageView's intrinsic content size seems to be the size of its image. The obvious approach, simply calling `-invalidateIntrinsicContentSize` when setting an animated image, results in UIImageView steadfastly returning `{UIViewNoIntrinsicMetric, UIViewNoIntrinsicMetric}` for its intrinsicContentSize.
-    // (Perhaps UIImageView bypasses its `-image` getter in its implementation of `-intrinsicContentSize`, as `-image` is not called after calling `-invalidateIntrinsicContentSize`.)
-    if (self.animatedImage) {
-        intrinsicContentSize = self.image.size;
-    }
-    
-    return intrinsicContentSize;
 }
 
 #pragma mark - UIImageView Method Overrides
@@ -778,6 +692,18 @@ static NSUInteger SDDeviceFreeMemory() {
 }
 
 #if SD_MAC
+// Layer-backed NSImageView optionally optimize to use a subview to do actual layer rendering.
+// When the optimization is turned on, it calls `updateLayer` instead of `displayLayer:` to update subview's layer.
+// When the optimization it turned off, this return nil and calls `displayLayer:` directly.
+- (CALayer *)imageViewLayer {
+    NSView *imageView = imageView = objc_getAssociatedObject(self, NSSelectorFromString(@"_imageView"));
+    if (!imageView) {
+        // macOS 10.14
+        imageView = objc_getAssociatedObject(self, NSSelectorFromString(@"_imageSubview"));
+    }
+    return imageView.layer;
+}
+
 - (void)updateLayer
 {
     if (_currentFrame) {
@@ -786,6 +712,17 @@ static NSUInteger SDDeviceFreeMemory() {
         [super updateLayer];
     }
 }
+
+- (BOOL)wantsUpdateLayer {
+    // AppKit is different from UIKit, it need extra check before the layer is updated
+    // When we use the custom animation, the layer.setNeedsDisplay is directly called from display link (See `displayDidRefresh:`). However, for normal image rendering, we must implements and return YES to mark it need display
+    if (_currentFrame) {
+        return NO;
+    } else {
+        return YES;
+    }
+}
+
 #endif
 
 
@@ -820,8 +757,10 @@ static CVReturn renderCallback(CVDisplayLinkRef displayLink, const CVTimeStamp *
     // Calculate refresh duration
     NSTimeInterval duration = (double)inOutputTime->videoRefreshPeriod / ((double)inOutputTime->videoTimeScale * inOutputTime->rateScalar);
     // CVDisplayLink callback is not on main queue
+    SDAnimatedImageView *imageView = (__bridge SDAnimatedImageView *)displayLinkContext;
+    __weak SDAnimatedImageView *weakImageView = imageView;
     dispatch_async(dispatch_get_main_queue(), ^{
-        [(__bridge SDAnimatedImageView *)displayLinkContext displayDidRefresh:displayLink duration:duration];
+        [weakImageView displayDidRefresh:displayLink duration:duration];
     });
     return kCVReturnSuccess;
 }
